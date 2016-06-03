@@ -31,37 +31,12 @@ import org.asynchttpclient._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.Try
 
-/** Http executor with defaults */
-case class Http(client: AsyncHttpClient) extends HttpExecutor
-
-object Http {
-
-  def configure(withBuilder: Builder => Builder) =
-    Http(client = new DefaultAsyncHttpClient(withBuilder(new DefaultAsyncHttpClientConfig.Builder()).build))
-
-}
-
-//object InternalDefaults {
-//  def client = new DefaultAsyncHttpClient(config)
-//
-//  /** Sets a user agent, no timeout for requests  */
-//  private object BasicDefaults {
-//    lazy val timer = new HashedWheelTimer()
-//
-//  }
-//
-//}
-
-
-trait HttpExecutor {
-  self =>
-  def client: AsyncHttpClient
+case class Http(client: AsyncHttpClient) {
 
   def apply[T](pair: (Request, AsyncHandler[T]))(implicit executor: ExecutionContext): Future[T] =
     apply(pair._1, pair._2)
 
-  def apply[T](request: Request, handler: AsyncHandler[T])
-              (implicit executor: ExecutionContext): Future[T] = {
+  def apply[T](request: Request, handler: AsyncHandler[T])(implicit executor: ExecutionContext): Future[T] = {
     val lfut = client.executeRequest(request, handler)
     val promise = Promise[T]()
     val runnable = new java.lang.Runnable {

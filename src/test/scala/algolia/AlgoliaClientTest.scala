@@ -97,14 +97,14 @@ class AlgoliaClientTest extends AlgoliaTest {
 
   describe("requests") {
 
-    val mockHttpClient: DispatchHttpClient = mock[DispatchHttpClient]
+    val mockHttpClient: AlgoliaHttpClient = mock[AlgoliaHttpClient]
     val emptyHeaders: Map[String, String] = Map()
     val timeoutRequest: Future[Result] = Future.failed(new TimeoutException())
 
     describe("search") {
 
       val apiClient = new AlgoliaClient("a", "b") {
-        override lazy val httpClient = mockHttpClient
+        override val httpClient = mockHttpClient
         override val headers = emptyHeaders
         override val random = notSoRandom
       }
@@ -217,7 +217,7 @@ class AlgoliaClientTest extends AlgoliaTest {
     describe("indexing") {
 
       val apiClient = new AlgoliaClient("a", "b") {
-        override lazy val httpClient = mockHttpClient
+        override val httpClient = mockHttpClient
         override val headers = emptyHeaders
         override val random = notSoRandom
       }
@@ -241,7 +241,7 @@ class AlgoliaClientTest extends AlgoliaTest {
     describe("failing DNS") {
 
       val apiClient = new AlgoliaClient(applicationId, apiKey) {
-        override lazy val httpClient: DispatchHttpClient = DispatchHttpClient(201, 202, 203)
+        override val httpClient: AlgoliaHttpClient = AlgoliaHttpClient(httpReadTimeout = 201, httpConnectTimeout = 202, httpRequestTimeout = 203)
 
         override lazy val queryHosts: Seq[String] = Seq(
           s"https://scala-dsn.algolia.biz", //Special domain that timeout on DNS resolution
@@ -249,12 +249,19 @@ class AlgoliaClientTest extends AlgoliaTest {
         )
       }
 
+      try {
+        java.security.Security.setProperty("networkaddress.cache.ttl", "0")
+        java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0")
+      } catch {
+        case e: Exception => println(e)
+      }
+
       it("should answer within 1 second") {
         val result = apiClient.execute {
           list.indices
         }
 
-        result.isReadyWithin(1.second) should be(true)
+        result.isReadyWithin(1000.second) should be(true)
       }
 
       it("should get a result") {
@@ -273,11 +280,11 @@ class AlgoliaClientTest extends AlgoliaTest {
 
   describe("wait for") {
 
-    val mockHttpClient: DispatchHttpClient = mock[DispatchHttpClient]
+    val mockHttpClient: AlgoliaHttpClient = mock[AlgoliaHttpClient]
     val emptyHeaders: Map[String, String] = Map()
 
     val apiClient = new AlgoliaClient("a", "b") {
-      override lazy val httpClient = mockHttpClient
+      override val httpClient = mockHttpClient
       override val headers = emptyHeaders
       override val random = notSoRandom
     }

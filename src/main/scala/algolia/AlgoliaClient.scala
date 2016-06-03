@@ -32,7 +32,9 @@ import javax.crypto.spec.SecretKeySpec
 import algolia.http.HttpPayload
 import algolia.objects.Query
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.collection.mutable
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.{Failure, Success, Try}
 
 class AlgoliaClient(applicationId: String, apiKey: String) {
 
@@ -63,7 +65,7 @@ class AlgoliaClient(applicationId: String, apiKey: String) {
       s"https://$applicationId-3.$ALGOLIANET_COM_HOST"
     ))
 
-  lazy val httpClient: DispatchHttpClient = DispatchHttpClient
+  val httpClient: AlgoliaHttpClient = AlgoliaHttpClient()
   val random: AlgoliaRandom = AlgoliaRandom
   val userAgent = s"Algolia for Scala ${BuildInfo.scalaVersion} API ${BuildInfo.version}"
 
@@ -100,15 +102,29 @@ class AlgoliaClient(applicationId: String, apiKey: String) {
   private[algolia] def request[T: Manifest](payload: HttpPayload)(implicit executor: ExecutionContext): Future[T] = {
     val hosts = if (payload.isSearch) queryHosts else indexingHosts
 
+    val toto = mutable.Map.empty[String, Long]
     hosts.foldLeft(Future.failed[T](new TimeoutException())) { (future, host) =>
-      val start = System.currentTimeMillis()
       future.recoverWith {
         case e: APIClientException =>
-          println(s"querying $host took ${System.currentTimeMillis() - start}ms")
+//          println(s"skip, 404")
           Future.failed(e) //No retry if 4XX
         case _ =>
-          println(s"querying $host took ${System.currentTimeMillis() - start}ms")
-          httpClient request[T](host, headers, payload)
+//          httpClient.request[T](host, headers, payload).map { a =>
+//            println(s"querying $host took ${System.currentTimeMillis() - start}ms")
+//            a
+//          }
+
+          val p = Promise[T]()
+          toto.put(host, System.currentTimeMillis())
+          httpClient.request[T](host, headers, payload).onComplete {
+            case Success(s) =>
+//              println(s"querying $host took ${System.currentTimeMillis() - toto.get(host).get}ms")
+              p success s
+            case Failure(e) =>
+//              println(s"querying $host took ${System.currentTimeMillis() - toto.get(host).get}ms")
+              p failure e
+          }
+          p.future
       }
     }
   }

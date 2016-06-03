@@ -24,7 +24,7 @@
 package algolia
 
 import algolia.http._
-import org.asynchttpclient.Response
+import org.asynchttpclient.{DefaultAsyncHttpClient, DefaultAsyncHttpClientConfig, Response}
 import org.json4s._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -36,44 +36,31 @@ object default {
   val httpConnectTimeout = 2000
 
   val httpRequestTimeout = 2000
+
+  val dnsTimeout = 200
 }
 
-object DispatchHttpClient extends DispatchHttpClient(
-  httpReadTimeout = default.httpReadTimeout,
-  httpConnectTimeout = default.httpConnectTimeout,
-  httpRequestTimeout = default.httpRequestTimeout
-)
+case class AlgoliaHttpClient(httpReadTimeout: Int = default.httpReadTimeout,
+                             httpConnectTimeout: Int = default.httpConnectTimeout,
+                             httpRequestTimeout: Int = default.httpRequestTimeout,
+                             dnsTimeout: Int = default.dnsTimeout) {
 
-case class DispatchHttpClient(httpReadTimeout: Int = default.httpReadTimeout,
-                              httpConnectTimeout: Int = default.httpConnectTimeout,
-                              httpRequestTimeout: Int = default.httpRequestTimeout) {
-
-  lazy val http = Http.configure { builder =>
-    builder
+  val asyncClientConfig =
+    new DefaultAsyncHttpClientConfig
+      .Builder()
       .setConnectTimeout(httpConnectTimeout)
       .setReadTimeout(httpReadTimeout)
       .setRequestTimeout(httpRequestTimeout)
-  }
+      .build()
+
+  val http = Http(new DefaultAsyncHttpClient(asyncClientConfig))
+
   implicit val formats: Formats = AlgoliaDsl.formats
 
   def request[T: Manifest](host: String, headers: Map[String, String], payload: HttpPayload)(implicit executor: ExecutionContext): Future[T] = {
-    val path = payload.path.foldLeft(url(host).secure) {
-      (url, p) => url / p
-    }
+    val request = Req(host, headers, payload)
 
-    var request = (payload.verb match {
-      case GET => path.GET
-      case POST => path.POST
-      case PUT => path.PUT
-      case DELETE => path.DELETE
-    }) <:< headers
-
-    request = payload.queryParameters.map(request <<? _).getOrElse(request)
-    request = payload.body.map(request << _).getOrElse(request)
-
-    val start = System.currentTimeMillis()
     val responseManager: Response => T = { response =>
-      println(s"querying $host took ${System.currentTimeMillis() - start}ms")
       response.getStatusCode / 100 match {
         case 2 => Json(response).extract[T]
         case 4 => throw APIClientException(response.getStatusCode, (Json(response) \ "message").extract[String])
